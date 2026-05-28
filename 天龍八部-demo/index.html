@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>天龍八部 — 金庸</title>
+  <meta name="description" content="天龍八部全文閱讀、人物實體標注、人物關係圖與統計分析平台。">
+  <link rel="stylesheet" href="assets/index.css">
+</head>
+<body>
+<header>
+  <button id="toggleReaderLeft" class="reader-toggle" title="展開/收合章節" aria-label="展開/收合章節"></button>
+  <h1>天龍八部<span class="author">金庸</span></h1>
+  <nav>
+    <button data-view="reader">瀏覽</button>
+    <button data-view="search" class="active">搜尋</button>
+    <button data-view="network">人物關係圖</button>
+    <button data-view="coGraph">共現圖</button>
+    <button data-view="stats">統計</button>
+  </nav>
+  <button id="mobileMenuToggle" class="mobile-menu-toggle" type="button" aria-label="展開選單" aria-expanded="false">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <button id="toggleReaderRight" class="reader-toggle" title="展開/收合人物資訊" aria-label="展開/收合人物資訊"></button>
+</header>
+
+<main>
+  <!-- 瀏覽 -->
+  <section id="reader" class="view layout reader-left-collapsed reader-right-collapsed">
+    <aside class="side">
+      <div class="panel-head"><h3 id="readerLeftTitle">章節</h3></div>
+      <div id="chapterList"></div>
+    </aside>
+    <article class="content" id="readerArticle">
+      <div id="readerContent"></div>
+    </article>
+    <aside class="info">
+      <div class="panel-head"><h3 id="readerRightTitle">人物資訊</h3></div>
+      <div id="entityInfo" class="entity-info-default">
+        <h3>點選標記</h3>
+        <p class="meta">點擊原文中的人名標記，可查看出現頻率與段落。</p>
+      </div>
+    </aside>
+  </section>
+
+  <!-- 搜尋 -->
+  <section id="search" class="view active">
+    <article class="content">
+      <div class="search-intro"><h2>全文搜尋</h2></div>
+      <div class="search-row">
+        <div class="search-input-wrap">
+          <input id="fulltextQuery" type="search" placeholder="搜尋原文，例如 段譽、降龍十八掌、丐幫…" autocomplete="off" spellcheck="false">
+          <button type="button" id="clearSearch" class="search-clear" title="清除" aria-label="清除">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="search-examples">
+        <span class="search-examples-label">熱門查詢：</span>
+        <button type="button" class="search-example">段譽</button>
+        <button type="button" class="search-example">喬峯</button>
+        <button type="button" class="search-example">虛竹</button>
+        <button type="button" class="search-example">王語嫣</button>
+        <button type="button" class="search-example">降龍十八掌</button>
+        <button type="button" class="search-example">六脈神劍</button>
+        <button type="button" class="search-example">丐幫</button>
+      </div>
+      <div id="searchResults"></div>
+    </article>
+  </section>
+
+  <!-- 人物關係圖 -->
+  <section id="network" class="view">
+    <iframe class="graph-frame" id="networkFrame" src="" title="天龍八部人物關係圖"></iframe>
+  </section>
+
+  <!-- 實體共現圖 -->
+  <section id="coGraph" class="view">
+    <iframe class="graph-frame" id="coGraphFrame" src="" title="天龍八部實體共現圖"></iframe>
+  </section>
+
+  <!-- 統計 -->
+  <section id="stats" class="view">
+    <article class="content">
+      <div class="cards" id="statCards"></div>
+      <div class="chart-section">
+        <h3>各章字數</h3>
+        <div class="chart-panel" id="chapterBarChart"></div>
+      </div>
+      <div class="chart-section">
+        <h3>人物出現次數</h3>
+        <div class="chart-panel" id="personBarChart"></div>
+      </div>
+    </article>
+  </section>
+</main>
+
+<footer class="site-footer">天龍八部 ─ 金庸著　本站僅供學術研究與個人閱讀使用</footer>
+
+<script>
+const state = { dataPromises: {} };
+const $ = sel => document.querySelector(sel);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ── Data loading ──
+async function loadJson(path) {
+  if (window.DEMO_JSON && window.DEMO_JSON[path]) return window.DEMO_JSON[path];
+  if (state.dataPromises[path]) return state.dataPromises[path];
+  state.dataPromises[path] = fetch(path)
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .catch(() => loadJsonScript(path));
+  return state.dataPromises[path];
+}
+function loadJsonScript(path) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = `${path}.js`;
+    s.onload = () => window.DEMO_JSON?.[path] ? resolve(window.DEMO_JSON[path]) : reject(new Error('key missing'));
+    s.onerror = () => reject(new Error(`Cannot load ${path}`));
+    document.head.appendChild(s);
+  });
+}
+
+// ── SVG icons ──
+const ICONS = {
+  leftExpand:   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M9 4v16"/><path d="M14 10l2 2-2 2"/></svg>',
+  leftCollapse: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M9 4v16"/><path d="M15 10l-2 2 2 2"/></svg>',
+  rightExpand:  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M15 4v16"/><path d="M10 10l-2 2 2 2"/></svg>',
+  rightCollapse:'<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M15 4v16"/><path d="M9 10l2 2-2 2"/></svg>',
+};
+
+// ── Navigation ──
+function initNav() {
+  document.querySelectorAll('header nav button').forEach(btn => {
+    btn.addEventListener('click', () => { switchView(btn.dataset.view); closeMenu(); });
+  });
+  $('#mobileMenuToggle').addEventListener('click', () => {
+    const open = $('header').classList.toggle('nav-open');
+    $('#mobileMenuToggle').setAttribute('aria-expanded', String(open));
+  });
+  $('#toggleReaderLeft').addEventListener('click', () => {
+    $('#reader').classList.toggle('reader-left-collapsed');
+    updateToggleIcons();
+  });
+  $('#toggleReaderRight').addEventListener('click', () => {
+    $('#reader').classList.toggle('reader-right-collapsed');
+    updateToggleIcons();
+  });
+  updateToggleIcons();
+}
+function closeMenu() { $('header').classList.remove('nav-open'); }
+function updateToggleIcons() {
+  const leftCollapsed = $('#reader').classList.contains('reader-left-collapsed');
+  const rightCollapsed = $('#reader').classList.contains('reader-right-collapsed');
+  $('#toggleReaderLeft').innerHTML  = leftCollapsed  ? ICONS.leftExpand   : ICONS.leftCollapse;
+  $('#toggleReaderRight').innerHTML = rightCollapsed ? ICONS.rightExpand  : ICONS.rightCollapse;
+}
+
+async function switchView(viewId) {
+  if (viewId === 'reader')  await ensureReader();
+  if (viewId === 'stats')   await ensureStats();
+  if (viewId === 'search')  await ensureSearch();
+  if (viewId === 'network') loadNetworkFrame();
+  if (viewId === 'coGraph') loadCoGraphFrame();
+  document.querySelectorAll('header nav button').forEach(b => b.classList.toggle('active', b.dataset.view === viewId));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === viewId));
+  document.body.classList.toggle('reader-view', viewId === 'reader');
+  document.body.classList.toggle('graph-view',  viewId === 'network' || viewId === 'coGraph');
+  if (viewId === 'stats') animateStatNumbers();
+}
+
+function loadCoGraphFrame() {
+  const frame = $('#coGraphFrame');
+  if (!frame.src || frame.src === window.location.href) {
+    frame.src = 'cooccurrence_graph.html';
+  }
+}
+
+function loadNetworkFrame() {
+  const frame = $('#networkFrame');
+  if (!frame.src || frame.src === window.location.href) {
+    frame.src = 'person_social_graph.html';
+  }
+}
+
+// ── Reader ──
+async function ensureReader() {
+  if (state.readerReady) return;
+  $('#readerContent').innerHTML = '<p class="meta">資料載入中…</p>';
+  [state.ebook, state.entityIndex] = await Promise.all([
+    loadJson('data/ebook.json'),
+    loadJson('data/basic_entity_index.json'),
+  ]);
+  state.readerReady = true;
+  renderChapterList();
+  renderChapter(1);
+}
+
+function renderChapterList() {
+  const chapters = state.ebook.chapters.filter(c => c.n > 0);
+  $('#chapterList').innerHTML = chapters.map(c =>
+    `<div class="chapter-link" data-n="${c.n}" role="button" tabindex="0">
+      <span class="chapter-no">第${c.n}章</span>
+      <span class="chapter-title">${esc(c.title.replace(/^第[零一二三四五六七八九十百]+章[\s　]*/, ''))}</span>
+    </div>`
+  ).join('');
+  $('#chapterList').querySelectorAll('.chapter-link').forEach(el => {
+    el.addEventListener('click', () => renderChapter(Number(el.dataset.n)));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') renderChapter(Number(el.dataset.n)); });
+  });
+}
+
+// ── Entity markup ──
+const ENTITY_CLASS = { PERSON: 'entity-person', PLACE: 'entity-place' };
+
+function renderMarkedParagraph(para) {
+  const entities = para.entities || [];
+  if (!entities.length) return `<p data-id="${esc(para.id)}">${esc(para.text)}</p>`;
+  const text = para.text;
+  let html = '';
+  let cursor = 0;
+  for (const e of entities) {
+    if (e.start > cursor) html += esc(text.slice(cursor, e.start));
+    const cls = ENTITY_CLASS[e.type] || 'entity-other';
+    html += `<span class="entity ${cls}" data-key="${esc(e.key)}" title="${esc(e.label)}">${esc(text.slice(e.start, e.end))}</span>`;
+    cursor = e.end;
+  }
+  if (cursor < text.length) html += esc(text.slice(cursor));
+  return `<p data-id="${esc(para.id)}">${html}</p>`;
+}
+
+function renderChapter(n, direction = null) {
+  const chapters = state.ebook.chapters;
+  const ch = chapters.find(c => c.n === n);
+  if (!ch) return;
+  state.currentChapter = n;
+
+  $('#chapterList').querySelectorAll('.chapter-link').forEach(el =>
+    el.classList.toggle('active', Number(el.dataset.n) === n));
+
+  const content = $('#readerContent');
+  content.classList.remove('chapter-slide-from-right', 'chapter-slide-from-left');
+  if (direction === 'next') void content.offsetWidth, content.classList.add('chapter-slide-from-right');
+  if (direction === 'prev') void content.offsetWidth, content.classList.add('chapter-slide-from-left');
+
+  const maxN = Math.max(...chapters.map(c => c.n));
+  const prevCh = chapters.find(c => c.n === n - 1);
+  const nextCh = chapters.find(c => c.n === n + 1);
+  const paragraphs = ch.paragraphs.map(renderMarkedParagraph).join('');
+
+  content.innerHTML = `
+    <h2>${esc(ch.title)}</h2>
+    ${paragraphs}
+    <hr class="chapter-end">
+    <div class="chapter-nav">
+      <button ${!prevCh ? 'disabled' : ''} onclick="renderChapter(${n-1},'prev')">← ${prevCh ? esc(prevCh.title) : '已是第一章'}</button>
+      <span class="progress">${n} / ${maxN}</span>
+      <button ${!nextCh ? 'disabled' : ''} onclick="renderChapter(${n+1},'next')">${nextCh ? esc(nextCh.title) : '已是最後一章'} →</button>
+    </div>`;
+
+  content.querySelectorAll('.entity').forEach(el => {
+    el.addEventListener('click', () => showEntityInfo(el.dataset.key));
+  });
+
+  $('#readerArticle').scrollTop = 0;
+  window.scrollTo(0, 0);
+}
+
+// ── Entity info panel ──
+function showEntityInfo(key) {
+  const ei = state.entityIndex?.entities?.[key];
+  if (!ei) return;
+  $('#reader').classList.remove('reader-right-collapsed');
+  updateToggleIcons();
+
+  const paraList = (ei.paragraphs || []).slice(0, 15).map(p =>
+    `<li><a href="#" onclick="event.preventDefault();renderChapter(${p.chapter_number})">第 ${p.chapter_number} 章・第 ${p.paragraph_number} 段</a>
+       <span class="paragraph-preview">${esc((p.text || '').slice(0, 40))}…</span></li>`
+  ).join('');
+
+  const factionLabel = {
+    dali:'大理段氏', beggars:'丐幫', murong:'姑蘇慕容',
+    xingxiu:'星宿派', xiaoyao:'逍遙派', shaolin:'少林寺',
+    tibet:'吐蕃', liao:'遼國', other:'江湖散人'
+  };
+
+  $('#entityInfo').innerHTML = `
+    <h3>${esc(ei.label)}</h3>
+    <p class="meta">
+      ${ei.faction ? `${factionLabel[ei.faction] || ei.faction}・` : ''}
+      出現 <strong>${ei.frequency.toLocaleString()}</strong> 次，共 <strong>${ei.paragraph_count}</strong> 段
+    </p>
+    <h4>出現段落（前 15 段）</h4>
+    <ul class="entity-paragraphs">${paraList}</ul>`;
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (!$('#reader')?.classList.contains('active') || !state.currentChapter) return;
+  if (e.key === 'ArrowLeft'  && state.currentChapter > 1) renderChapter(state.currentChapter - 1, 'prev');
+  if (e.key === 'ArrowRight') renderChapter(state.currentChapter + 1, 'next');
+});
+
+// ── Search ──
+const PAGE_SIZE = 30;
+async function ensureSearch() {
+  if (state.searchReady) return;
+  state.search = await loadJson('data/search_index.json');
+  state.searchReady = true;
+  initSearch();
+}
+function initSearch() {
+  if (state.searchInitDone) return;
+  state.searchInitDone = true;
+  const input = $('#fulltextQuery'), clearBtn = $('#clearSearch');
+  input.addEventListener('input', () => {
+    clearBtn.classList.toggle('is-visible', input.value.length > 0);
+    debounceSearch(input.value.trim());
+  });
+  clearBtn.addEventListener('click', () => { input.value = ''; clearBtn.classList.remove('is-visible'); $('#searchResults').innerHTML = ''; });
+  document.querySelectorAll('.search-example').forEach(btn =>
+    btn.addEventListener('click', () => { input.value = btn.textContent; clearBtn.classList.add('is-visible'); doSearch(btn.textContent); }));
+}
+let searchTimer = null;
+function debounceSearch(q) {
+  clearTimeout(searchTimer);
+  if (!q) { $('#searchResults').innerHTML = ''; return; }
+  searchTimer = setTimeout(() => doSearch(q), 260);
+}
+function doSearch(q) {
+  if (!state.searchReady) { ensureSearch().then(() => doSearch(q)); return; }
+  const query = q.trim();
+  if (!query) { $('#searchResults').innerHTML = ''; return; }
+  const docs = state.search.documents.filter(d => d.text.includes(query));
+  if (!docs.length) { $('#searchResults').innerHTML = `<p class="meta">找不到「${esc(query)}」的相關段落。</p>`; return; }
+  state.searchQuery = query; state.searchDocs = docs; state.searchPage = 0;
+  renderSearchPage();
+}
+function renderSearchPage() {
+  const { searchDocs: docs, searchQuery: query, searchPage: page } = state;
+  const total = docs.length, totalPages = Math.ceil(total / PAGE_SIZE);
+  const slice = docs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const pager = totalPages > 1
+    ? `<div class="pager"><span>共 ${total.toLocaleString()} 筆，第 ${page+1}/${totalPages} 頁</span><div class="pager-controls">
+        <button ${page===0?'disabled':''} onclick="changePage(-1)">← 上一頁</button>
+        <button ${page>=totalPages-1?'disabled':''} onclick="changePage(1)">下一頁 →</button>
+       </div></div>` : `<p class="meta" style="margin-bottom:1rem">共 ${total.toLocaleString()} 筆</p>`;
+  const items = slice.map(d => `<div class="result">
+    <span class="result-title" onclick="goToChapterFromSearch(${d.chapter_number})">${esc(d.chapter_title)}</span>
+    <div class="snippet">${highlightText(d.text, query)}</div>
+    <div class="meta">第 ${d.chapter_number} 章・第 ${d.paragraph_number} 段</div>
+  </div>`).join('');
+  $('#searchResults').innerHTML = pager + items + (totalPages > 1 ? pager : '');
+}
+function changePage(delta) {
+  const totalPages = Math.ceil(state.searchDocs.length / PAGE_SIZE);
+  state.searchPage = Math.max(0, Math.min(totalPages - 1, state.searchPage + delta));
+  renderSearchPage(); $('#search .content').scrollTop = 0;
+}
+function goToChapterFromSearch(n) { switchView('reader').then(() => renderChapter(n)); }
+function highlightText(text, query) {
+  if (!query) return esc(text);
+  return esc(text).split(esc(query)).join(`<mark>${esc(query)}</mark>`);
+}
+
+// ── Stats ──
+async function ensureStats() {
+  if (state.statsReady) return;
+  $('#statCards').innerHTML = '<p class="meta">統計資料載入中…</p>';
+  [state.statistics, state.personNetwork] = await Promise.all([
+    loadJson('data/statistics.json'),
+    loadJson('data/person_social_network.json'),
+  ]);
+  state.statsReady = true;
+  initStats();
+}
+function initStats() {
+  const s = state.statistics, book = s.book;
+  const chapters = s.chapters.filter(c => c.n > 0);
+  const maxChLen = Math.max(...chapters.map(c => c.character_count));
+  const maxChTitle = chapters.find(c => c.character_count === maxChLen)?.title || '';
+  const avgLen = Math.round(book.total_characters / chapters.length);
+  const icon = t => { const a='xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"'; return ({book:`<svg ${a}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"/></svg>`,text:`<svg ${a}><path d="M7 5h10M7 9h10M7 13h7M7 17h5"/></svg>`,top:`<svg ${a}><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></svg>`,avg:`<svg ${a}><path d="M3 12h18M3 6h18M3 18h18"/></svg>`})[t]; };
+  $('#statCards').innerHTML = [
+    ['章回數', chapters.length, icon('book')],
+    ['總字數', book.total_characters, icon('text')],
+    ['最長章節', `<span style="font-size:16px;font-weight:600">${esc(maxChTitle.replace(/^第[零一二三四五六七八九十百]+章[\s　]*/, ''))}</span>`, icon('top')],
+    ['平均字數', avgLen, icon('avg')],
+  ].map(([k,v,i]) => `<div class="card stat-card"><span class="stat-icon">${i}</span><strong class="stat-number" data-value="${typeof v==='number'?v:''}">${typeof v==='number'?0:v}</strong><span class="stat-title">${k}</span></div>`).join('');
+  const barRows = chapters.map(c => ({ label: c.title.replace(/^第[零一二三四五六七八九十百]+章[\s　]*/, ''), value: c.character_count }));
+  $('#chapterBarChart').innerHTML = barChart(barRows, '#3a6b28');
+  renderPersonChart();
+}
+function barChart(rows, color) {
+  const max = Math.max(...rows.map(r => r.value), 1);
+  const col = color || '#3a6b28';
+  return `<div class="bar-list">${rows.map(r => { const pct=(r.value/max*100).toFixed(1); return `<div class="bar-row"><span class="bar-label" title="${esc(r.label)}">${esc(r.label)}</span><span class="bar-track"><progress class="bar-progress" max="100" value="100" style="--bar-width:${pct}%;--bar-color:${col}"></progress><span class="bar-percent">${pct}%</span></span><span class="bar-value">${r.value.toLocaleString()}</span></div>`; }).join('')}</div>`;
+}
+const FACTION_COLOR = {dali:'#c8962d',beggars:'#7d5a3c',murong:'#3d9e8c',xingxiu:'#8b5cf6',xiaoyao:'#2196f3',shaolin:'#e07d24',tibet:'#c0392b',liao:'#2d7d46',other:'#6b7280'};
+function renderPersonChart() {
+  const nodes = (state.personNetwork?.nodes || [])
+    .slice().sort((a,b) => b.frequency - a.frequency);
+  if (!nodes.length) { $('#personBarChart').innerHTML = '<p class="meta">無資料</p>'; return; }
+  const max = nodes[0].frequency;
+  const rows = nodes.map(n => {
+    const col = FACTION_COLOR[n.faction] || FACTION_COLOR.other;
+    const pct = (n.frequency / max * 100).toFixed(1);
+    return `<div class="bar-row"><span class="bar-label" title="${esc(n.name)}">${esc(n.name)}</span><span class="bar-track"><progress class="bar-progress" max="100" value="100" style="--bar-width:${pct}%;--bar-color:${col}"></progress><span class="bar-percent">${pct}%</span></span><span class="bar-value">${n.frequency.toLocaleString()}</span></div>`;
+  });
+  $('#personBarChart').innerHTML = `<div class="bar-list">${rows.join('')}</div>`;
+}
+function animateStatNumbers() {
+  document.querySelectorAll('.stat-number[data-value]').forEach(el => {
+    const target = Number(el.dataset.value); if (!target) return;
+    const start = performance.now(), dur = 900;
+    const tick = now => { const p=Math.min(1,(now-start)/dur), e=1-Math.pow(1-p,3); el.textContent=Math.round(target*e).toLocaleString(); if(p<1) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  });
+}
+
+// ── Init ──
+initNav();
+loadJson('data/search_index.json').then(data => { state.search=data; state.searchReady=true; initSearch(); }).catch(()=>{});
+</script>
+</body>
+</html>

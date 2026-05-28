@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>天龍八部 — 實體共現圖</title>
+  <script src="vendor/d3.v7.min.js"></script>
+  <style>
+:root { --bg:#0b1020; --panel:#111828; --ink:#d7e2ff; --muted:#8aa0d6; --line:#1f2f5a; }
+html,body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--bg); color:var(--ink); font-family:ui-sans-serif,system-ui,-apple-system,"Noto Sans TC",sans-serif; }
+.app { display:grid; grid-template-columns:300px 1fr; grid-template-rows:auto minmax(0,1fr); width:100%; height:100vh; overflow:hidden; }
+header { grid-column:1/3; padding:10px 16px; background:linear-gradient(90deg,#0e1530,#0b1020 50%); border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+h1 { margin:0; font-size:17px; white-space:nowrap; }
+.small { color:var(--muted); font-size:11px; line-height:1.6; }
+.panel-toggle,.panel-backdrop { display:none; }
+.panel-toggle { cursor:pointer; padding:7px 11px; border-radius:9px; border:1px solid var(--line); background:#0d1633; color:#cfe2ff; font-size:13px; white-space:nowrap; }
+aside { min-height:0; background:var(--panel); padding:12px; border-right:1px solid var(--line); overflow:auto; overscroll-behavior:contain; }
+main { position:relative; min-width:0; min-height:0; overflow:hidden; }
+#graph { width:100%; height:100%; display:block; }
+.toolbar { display:grid; gap:10px; }
+.card { background:#0f1733; border:1px solid #22305b; border-radius:10px; padding:10px; }
+.card h3 { margin:0 0 8px; font-size:13px; color:#bcd0ff; }
+label { display:flex; align-items:center; gap:8px; margin:5px 0; font-size:13px; }
+input,select { width:100%; box-sizing:border-box; padding:7px 9px; border-radius:8px; border:1px solid var(--line); background:#0c1430; color:var(--ink); font-size:13px; }
+input[type="checkbox"] { width:auto; accent-color:#5fbfff; }
+input[type="range"] { padding:0; }
+select { width:100px; }
+#chapterSelect { width:100%; }
+.param-row { display:grid; grid-template-columns:60px minmax(0,1fr) 38px; align-items:center; gap:8px; margin:7px 0; font-size:13px; }
+.param-value { color:var(--muted); text-align:right; }
+.row { margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
+.btn { cursor:pointer; padding:7px 10px; border-radius:9px; border:1px solid var(--line); background:#0d1633; color:#cfe2ff; font-size:13px; }
+.btn:hover { border-color:#4164d6; }
+.legend { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+.badge { display:inline-flex; gap:5px; align-items:center; padding:3px 8px; border-radius:999px; border:1px solid var(--line); background:#111a3a; font-size:12px; }
+.dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+.link { fill:none; stroke:#6f7fae; stroke-opacity:.2; stroke-linecap:round; }
+.link.hover { stroke-opacity:.9; }
+.link.dim { opacity:.04; }
+.node circle { stroke:#0b1020; stroke-width:2; }
+.node text { fill:#d7e2ff; font-size:12px; paint-order:stroke; stroke:#0b1020; stroke-width:3px; stroke-linejoin:round; pointer-events:none; }
+.node.dim { opacity:.15; }
+.node.selected circle { stroke:#fff; stroke-width:3; }
+.info { position:absolute; right:12px; top:12px; width:min(300px,calc(100% - 24px)); background:rgba(14,21,48,.92); border:1px solid #2a3a6b; border-radius:12px; padding:12px; pointer-events:none; }
+.info h2 { margin:0 0 4px; font-size:17px; }
+.info ol { margin:8px 0 0; padding-left:18px; }
+.info ol li { margin-bottom:4px; font-size:12px; line-height:1.55; }
+.watermark { position:absolute; right:14px; bottom:10px; color:#3a4e7a; font-size:11px; }
+@media (max-width:860px) {
+  .app { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); }
+  header { grid-column:1; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; }
+  header .small { grid-column:1/-1; }
+  h1 { font-size:15px; }
+  .panel-toggle { display:inline-flex; z-index:25; }
+  aside { position:fixed; z-index:20; left:0; top:0; bottom:0; width:min(86vw,300px); box-sizing:border-box; transform:translateX(-105%); transition:transform .22s ease; box-shadow:20px 0 48px rgba(0,0,0,.34); }
+  body.panel-open aside { transform:translateX(0); }
+  .panel-backdrop { position:fixed; inset:0; z-index:15; border:0; background:rgba(3,7,18,.48); display:none; }
+  body.panel-open .panel-backdrop { display:block; }
+  main { grid-column:1; grid-row:2; }
+  .info { display:none; }
+}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <button class="panel-toggle" id="panelToggle" type="button" aria-expanded="false">控制</button>
+    <h1>天龍八部 — 實體共現圖</h1>
+    <span class="small">依段落共現建立人物、武功、空間建築、地點、組織的關聯。邊權重為共同出現的段落數。</span>
+  </header>
+  <aside id="graphControls">
+    <div class="toolbar">
+      <div class="card">
+        <h3>查詢</h3>
+        <input id="entitySearch" placeholder="輸入實體，如 段譽、六脈神劍">
+        <div class="row">
+          <button class="btn" id="btnFocus">聚焦</button>
+          <button class="btn" id="btnClear">清除</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>章回篩選</h3>
+        <select id="chapterSelect"><option value="">全書</option></select>
+      </div>
+      <div class="card">
+        <h3>圖例</h3>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="card">
+        <h3>節點類型</h3>
+        <label><input type="checkbox" value="PERSON"   checked> 人物</label>
+        <label><input type="checkbox" value="MARTIAL"  checked> 武功秘笈</label>
+        <label><input type="checkbox" value="BUILDING" checked> 空間建築</label>
+        <label><input type="checkbox" value="PLACE"    checked> 地點</label>
+        <label><input type="checkbox" value="ORG"      checked> 組織派別</label>
+      </div>
+      <div class="card">
+        <h3>圖面設定</h3>
+        <label>節點數 <select id="nodeLimit"><option>40</option><option selected>80</option><option>120</option><option value="all">全部</option></select></label>
+        <label>最小共現 <select id="minWeight"><option>1</option><option selected>2</option><option>5</option><option>10</option><option>20</option></select></label>
+        <div class="row"><button class="btn" id="resetGraph">重新布局</button></div>
+      </div>
+      <div class="card">
+        <h3>物理參數</h3>
+        <div class="param-row"><span>斥力</span><input id="chargeStrength" type="range" min="100" max="800" step="20" value="340"><span class="param-value" id="chargeVal">340</span></div>
+        <div class="param-row"><span>線距</span><input id="linkDistance"   type="range" min="80"  max="350" step="10" value="200"><span class="param-value" id="distVal">200</span></div>
+        <div class="param-row"><span>碰撞</span><input id="collisionPad"   type="range" min="2"   max="30"  step="2"  value="14"><span class="param-value" id="colVal">14</span></div>
+      </div>
+    </div>
+  </aside>
+  <button class="panel-backdrop" id="panelBackdrop" type="button" aria-label="關閉"></button>
+  <main>
+    <svg id="graph"></svg>
+    <div class="info" id="info">
+      <h2>共現圖</h2>
+      <div class="small">點選節點查看共現對象。搜尋可聚焦單一實體與其鄰近節點。</div>
+    </div>
+    <div class="watermark">天龍八部實體共現圖</div>
+  </main>
+</div>
+
+<script>
+// ── Entity type config ──
+const typeMeta = {
+  PERSON:   { label: '人物',     color: '#facc15' },
+  MARTIAL:  { label: '武功秘笈', color: '#4ade80' },
+  BUILDING: { label: '空間建築', color: '#60a5fa' },
+  PLACE:    { label: '地點',     color: '#a78bfa' },
+  ORG:      { label: '組織派別', color: '#fb923c' },
+};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ── Panel toggle ──
+const panelToggle = $('#panelToggle'), panelBackdrop = $('#panelBackdrop');
+function setPanelOpen(open) { document.body.classList.toggle('panel-open', open); panelToggle.setAttribute('aria-expanded', String(open)); }
+panelToggle.addEventListener('click', () => setPanelOpen(!document.body.classList.contains('panel-open')));
+panelBackdrop.addEventListener('click', () => setPanelOpen(false));
+
+// ── Data loading ──
+async function loadJson(path) {
+  if (window.DEMO_JSON && window.DEMO_JSON[path]) return window.DEMO_JSON[path];
+  try {
+    const r = await fetch(path);
+    if (!r.ok) throw new Error();
+    return r.json();
+  } catch {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = path + '.js';
+      s.onload = () => window.DEMO_JSON?.[path] ? resolve(window.DEMO_JSON[path]) : reject();
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+}
+
+let ebook, base, simulation;
+let graphData = { nodes: [], links: [] };
+let selectedId = '';
+
+const svg = d3.select('#graph');
+const g = svg.append('g');
+const linkLayer = g.append('g');
+const nodeLayer = g.append('g');
+svg.call(d3.zoom().scaleExtent([.18, 5]).on('zoom', e => g.attr('transform', e.transform)));
+
+loadJson('data/ebook.json').then(data => {
+  ebook = data;
+  initControls();
+  base = buildBaseGraph();
+  updateGraph();
+});
+
+// ── Controls ──
+function initControls() {
+  // Chapter select
+  const sel = $('#chapterSelect');
+  ebook.chapters.filter(ch => ch.n > 0).forEach(ch => {
+    const opt = document.createElement('option');
+    opt.value = ch.id;
+    opt.textContent = `第 ${ch.n} 章 ${ch.title.replace(/^第[^章]+章[\s\u3000]*/, '')}`;
+    sel.appendChild(opt);
+  });
+  // Legend
+  $('#legend').innerHTML = Object.entries(typeMeta).map(([type, m]) =>
+    `<span class="badge"><span class="dot" style="background:${m.color}"></span>${m.label}</span>`
+  ).join('');
+  // Physics labels
+  updatePhysicsLabels();
+  // Listeners
+  document.querySelectorAll('#graphControls input:not(#entitySearch), #graphControls select').forEach(el =>
+    el.addEventListener('input', () => { updatePhysicsLabels(); updateGraph(); }));
+  $('#entitySearch').addEventListener('keydown', e => { if (e.key === 'Enter') focusFromSearch(); });
+  $('#btnFocus').addEventListener('click', focusFromSearch);
+  $('#btnClear').addEventListener('click', () => { $('#entitySearch').value = ''; selectedId = ''; updateGraph(); });
+  $('#resetGraph').addEventListener('click', () => { clearPositions(); updateGraph(); });
+  window.addEventListener('resize', () => render(graphData));
+}
+
+function updatePhysicsLabels() {
+  $('#chargeVal').textContent = $('#chargeStrength').value;
+  $('#distVal').textContent   = $('#linkDistance').value;
+  $('#colVal').textContent    = $('#collisionPad').value;
+}
+
+function physics() {
+  return {
+    charge: Number($('#chargeStrength').value),
+    distance: Number($('#linkDistance').value),
+    collision: Number($('#collisionPad').value),
+  };
+}
+
+// ── Build co-occurrence graph from ebook ──
+function buildBaseGraph() {
+  const nodes = new Map();
+  const links = new Map();
+
+  for (const ch of ebook.chapters) {
+    for (const para of ch.paragraphs) {
+      if (!para.entities || !para.entities.length) continue;
+      // Deduplicate by entity key within this paragraph
+      const seen = new Map();
+      for (const ent of para.entities) {
+        if (!typeMeta[ent.type]) continue;
+        if (seen.has(ent.key)) continue;
+        seen.set(ent.key, { id: ent.key, label: ent.label || ent.text, type: ent.type });
+        // Update node stats
+        const n = nodes.get(ent.key) || {
+          id: ent.key, label: ent.label || ent.text, type: ent.type,
+          frequency: 0, paragraphs: new Set(), chapters: new Set()
+        };
+        n.frequency += 1;
+        n.paragraphs.add(para.id);
+        n.chapters.add(ch.id);
+        nodes.set(ent.key, n);
+      }
+      // Build co-occurrence pairs
+      const uniq = [...seen.values()].sort((a, b) => a.id.localeCompare(b.id));
+      for (let i = 0; i < uniq.length; i++) {
+        for (let j = i + 1; j < uniq.length; j++) {
+          const linkKey = `${uniq[i].id}||${uniq[j].id}`;
+          const lnk = links.get(linkKey) || {
+            id: linkKey,
+            source: uniq[i].id, target: uniq[j].id,
+            sourceLabel: uniq[i].label, targetLabel: uniq[j].label,
+            weight: 0, paragraphs: new Set(), chapters: new Set()
+          };
+          lnk.weight += 1;
+          lnk.paragraphs.add(para.id);
+          lnk.chapters.add(ch.id);
+          links.set(linkKey, lnk);
+        }
+      }
+    }
+  }
+  return { nodes: [...nodes.values()], links: [...links.values()] };
+}
+
+// ── Filter & update ──
+function selectedTypes() {
+  return new Set([...document.querySelectorAll('#graphControls input[type="checkbox"]:checked')].map(x => x.value));
+}
+
+function lsid(l) { return typeof l.source === 'object' ? l.source.id : l.source; }
+function ltid(l) { return typeof l.target === 'object' ? l.target.id : l.target; }
+
+function updateGraph() {
+  const types = selectedTypes();
+  const chapterId = $('#chapterSelect').value;
+  const q = $('#entitySearch').value.trim();
+  const minW = Number($('#minWeight').value);
+  const limitVal = $('#nodeLimit').value;
+  const limit = limitVal === 'all' ? Infinity : Number(limitVal);
+
+  let nodes = base.nodes.filter(n => types.has(n.type) && (!chapterId || n.chapters.has(chapterId)));
+  let links = base.links.filter(l => l.weight >= minW && (!chapterId || l.chapters.has(chapterId)));
+  const ids = new Set(nodes.map(n => n.id));
+  links = links.filter(l => ids.has(l.source) && ids.has(l.target));
+
+  if (q) {
+    const matched = nodes.find(n => n.label.includes(q) || n.id.includes(q));
+    if (!matched) {
+      selectedId = '';
+      render({ nodes: [], links: [] }, `找不到「${q}」`);
+      return;
+    }
+    const keep = new Set([matched.id]);
+    links.filter(l => lsid(l) === matched.id || ltid(l) === matched.id)
+         .forEach(l => { keep.add(lsid(l)); keep.add(ltid(l)); });
+    nodes = nodes.filter(n => keep.has(n.id));
+    links = links.filter(l => keep.has(lsid(l)) && keep.has(ltid(l)));
+    selectedId = matched.id;
+  } else {
+    selectedId = '';
+  }
+
+  // Rank by weighted degree then frequency
+  const deg = new Map();
+  links.forEach(l => {
+    deg.set(l.source, (deg.get(l.source) || 0) + l.weight);
+    deg.set(l.target, (deg.get(l.target) || 0) + l.weight);
+  });
+  const topIds = new Set(
+    nodes.slice().sort((a, b) => (deg.get(b.id) || 0) - (deg.get(a.id) || 0) || b.frequency - a.frequency)
+         .slice(0, limit).map(n => n.id)
+  );
+  if (selectedId) topIds.add(selectedId);
+
+  nodes = nodes.filter(n => topIds.has(n.id)).map(n => ({
+    ...n, paragraph_count: n.paragraphs.size, chapter_count: n.chapters.size, degree: deg.get(n.id) || 0
+  }));
+  links = links.filter(l => topIds.has(l.source) && topIds.has(l.target))
+               .map(l => ({ ...l, paragraph_count: l.paragraphs.size }));
+
+  graphData = { nodes, links };
+  render(graphData);
+}
+
+function focusFromSearch() {
+  const q = $('#entitySearch').value.trim();
+  if (!q) { selectedId = ''; updateGraph(); return; }
+  updateGraph();
+}
+
+// ── Render ──
+function render(data, message = '') {
+  const el = $('#graph');
+  const width = el.clientWidth || 900, height = el.clientHeight || 650;
+  svg.attr('viewBox', [0, 0, width, height]);
+  if (simulation) simulation.stop();
+  seedPositions(data.nodes, width, height);
+  const p = physics();
+
+  simulation = d3.forceSimulation(data.nodes)
+    .force('link', d3.forceLink(data.links).id(d => d.id)
+      .distance(d => Math.max(80, p.distance - d.weight * 1.5)).strength(.24))
+    .force('charge', d3.forceManyBody().strength(-p.charge))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('x', d3.forceX(width / 2).strength(.02))
+    .force('y', d3.forceY(height / 2).strength(.02))
+    .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + p.collision));
+
+  const linkSel = linkLayer.selectAll('line')
+    .data(data.links, d => d.id)
+    .join('line')
+    .attr('class', 'link')
+    .attr('stroke-width', d => Math.max(.7, Math.min(5, Math.sqrt(d.weight) / 2)));
+
+  const nodeSel = nodeLayer.selectAll('g')
+    .data(data.nodes, d => d.id)
+    .join(enter => {
+      const n = enter.append('g').attr('class', 'node')
+        .call(drag(simulation))
+        .on('click', (event, d) => { event.stopPropagation(); focusNode(d); });
+      n.append('circle');
+      n.append('text').attr('x', 10).attr('y', 4);
+      return n;
+    });
+
+  nodeSel.classed('selected', d => d.id === selectedId);
+  nodeSel.select('circle').attr('r', nodeRadius).attr('fill', d => typeMeta[d.type]?.color || '#8aa0d6');
+  nodeSel.select('text').text(d => d.label);
+
+  simulation.on('tick', () => {
+    linkSel.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+           .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+
+  if (message) {
+    $('#info').innerHTML = `<h2>查無結果</h2><div class="small">${esc(message)}。請確認輸入的實體名稱。</div>`;
+  } else if (selectedId) {
+    const n = data.nodes.find(x => x.id === selectedId);
+    if (n) showNodeInfo(n, data);
+  } else {
+    $('#info').innerHTML = `<h2>共現圖</h2><div class="small">目前顯示 ${data.nodes.length} 個節點、${data.links.length} 條共現邊。<br>點選節點可查看關聯。</div>`;
+  }
+}
+
+function nodeRadius(d) { return Math.min(18, 4 + Math.sqrt(d.frequency) * .3); }
+
+function seedPositions(nodes, width, height) {
+  if (!nodes.length) return;
+  const cols = Math.ceil(Math.sqrt(nodes.length * width / Math.max(height, 1)));
+  const rows = Math.ceil(nodes.length / cols);
+  const padX = Math.min(90, width * .1), padY = Math.min(80, height * .12);
+  const iW = Math.max(1, width - padX * 2), iH = Math.max(1, height - padY * 2);
+  nodes.forEach((n, i) => {
+    if (Number.isFinite(n.x) && Number.isFinite(n.y)) return;
+    const col = i % cols, row = Math.floor(i / cols);
+    n.x = padX + (cols === 1 ? iW / 2 : col * iW / (cols - 1)) + ((i * 37) % 23) - 11;
+    n.y = padY + (rows === 1 ? iH / 2 : row * iH / (rows - 1)) + ((i * 53) % 23) - 11;
+  });
+}
+
+function clearPositions() {
+  if (base) base.nodes.forEach(n => { n.x = undefined; n.y = undefined; n.fx = null; n.fy = null; });
+}
+
+function showNodeInfo(d, data) {
+  selectedId = d.id;
+  nodeLayer.selectAll('.node').classed('selected', n => n.id === d.id);
+  const neighbors = data.links
+    .filter(l => lsid(l) === d.id || ltid(l) === d.id)
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 14);
+  const typeLabel = typeMeta[d.type]?.label || d.type;
+  $('#info').innerHTML = `
+    <h2>${esc(d.label)}</h2>
+    <div class="small">${typeLabel}｜出現 ${d.frequency} 次｜段落 ${d.paragraph_count} 段｜章回 ${d.chapter_count} 回</div>
+    <ol>${neighbors.map(l => {
+      const other = lsid(l) === d.id ? l.target : l.source;
+      const otherLabel = typeof other === 'object' ? other.label : other;
+      return `<li>${esc(otherLabel)}：共現 ${l.weight} 段</li>`;
+    }).join('')}</ol>`;
+}
+
+function focusNode(d) {
+  $('#entitySearch').value = d.label;
+  selectedId = d.id;
+  updateGraph();
+}
+
+function drag(sim) {
+  return d3.drag()
+    .on('start', (e, d) => { if (!e.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; });
+}
+</script>
+</body>
+</html>
