@@ -1,0 +1,22 @@
+name: Deploy 笑傲江湖-demo to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '笑傲江湖-demo/**'   # 只在這個目錄有變動時才觸發
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./笑傲江湖-demo    # ← 指向子目錄
